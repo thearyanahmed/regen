@@ -1,3 +1,4 @@
+use clap::Parser as ClapParser;
 use csv::ReaderBuilder;
 use csv::WriterBuilder;
 use futures::future::try_join_all;
@@ -8,25 +9,12 @@ use rusoto_s3::{PutObjectRequest, S3, S3Client};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir; // For concurrent uploads
+use walkdir::WalkDir;
 
-/// Generates an image based on a mathematical function or geometric pattern.
-///
-/// # Arguments
-/// * `width` - The width of the image in pixels.
-/// * `height` - The height of the image in pixels.
-/// * `pattern_type` - A string defining the type of mathematical pattern
-///   ("mandelbrot", "random_julia", "barnsley_fern", "burning_ship",
-///   "sin_wave", "modulo_grid", "gradient", "circle", "rectangle").
-/// * `filename` - The desired filename for the generated image (e.g., "my_pattern.png").
-/// * `mandelbrot_params` - Optional tuple for Mandelbrot specific parameters:
-///   (x_pos, y_pos, escape_radius, max_iterations, smoothness, color_step)
-///
-/// # Returns
-/// A `Result` containing the `PathBuf` to the saved image file on success,
-/// or a `Box<dyn std::error::Error>` on failure.
+// For concurrent uploads
 #[allow(clippy::too_many_arguments)] // This function signature is intentionally long for demonstration
 pub fn generate_mathematical_image(
     width: u32,
@@ -142,12 +130,6 @@ pub fn generate_mathematical_image(
 pub fn preview_image(image_path: &PathBuf) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let path_str = image_path.to_str().ok_or("Invalid path for preview")?;
 
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(&["/C", "start", path_str])
-            .spawn()?;
-    }
     #[cfg(target_os = "macos")]
     {
         Command::new("open").arg(path_str).spawn()?;
@@ -162,85 +144,154 @@ pub fn preview_image(image_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
 }
 
 // Main function for testing purposes
+
+#[derive(clap::Parser)]
+#[clap(name = "FractalGen")]
+#[clap(about = "Generate and upload fractal images", long_about = None)]
+struct Cli {
+    #[clap(subcommand)]
+    command: Commands,
+}
+
+#[derive(clap::Subcommand)]
+enum Commands {
+    /// Generate N Mandelbrot images
+    Generate {
+        /// Number of images to generate
+        #[clap(short, long)]
+        count: usize,
+    },
+    /// Upload images to DigitalOcean Spaces
+    Upload,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // println!("Generating and previewing images...");
+    match Cli::parse().command {
+        Commands::Generate { count } => {
+            // Arc for thread-safe RNG seeding (each task gets its own RNG)
+            let tasks: Vec<_> = (0..count)
+                .map(|i| {
+                    tokio::spawn(async move {
+                        let mut rng = rand::thread_rng();
+                        let width = rng.gen_range(3000..=5000);
+                        let height = rng.gen_range(2000..=3500);
+                        let x_pos = rng.gen_range(-0.5..0.5);
+                        let y_pos = rng.gen_range(0.6..0.9);
+                        let escape_radius = rng.gen_range(0.01..0.2);
+                        let max_iterations = rng.gen_range(400..1200);
+                        let smoothness = rng.gen_range(1..20);
+                        let color_step = rng.gen_range(1000.0..10000.0);
 
-    // Mandelbrot Set with GoBrot-like parameters (default view)
-    let path_mandelbrot_default = generate_mathematical_image(
-        1024,
-        768,
-        "mandelbrot",
-        "mandelbrot_gobrot_default.png",
-        Some((-0.00275, 0.78912, 0.125689, 800, 8, 6000.0)),
-    )?;
-    preview_image(&path_mandelbrot_default)?;
+                        let path = generate_mathematical_image(
+                            width,
+                            height,
+                            "mandelbrot",
+                            &format!("mandelbrot_{}.png", i),
+                            Some((
+                                x_pos,
+                                y_pos,
+                                escape_radius,
+                                max_iterations,
+                                smoothness,
+                                color_step,
+                            )),
+                        )?;
 
-    // Mandelbrot Set with GoBrot example parameters (test 2)
-    let path_mandelbrot_test2 = generate_mathematical_image(
-        1024,
-        768,
-        "mandelbrot",
-        "mandelbrot_gobrot_test2.png",
-        Some((-0.0091275, 0.7899912, 0.01401245, 600, 8, 600.0)),
-    )?;
-    preview_image(&path_mandelbrot_test2)?;
+                        // Regenerate the image until the fractal ratio is at least 0.4
+                        let mut fractal_ratio = 0.0;
+                        let mut path = path;
+                        let mut attempts = 0;
+                        while fractal_ratio < 0.4 || fractal_ratio > 0.6 {
+                            if attempts > 0 {
+                                // Regenerate with new random parameters
+                                let width = rng.gen_range(3000..=5000);
+                                let height = rng.gen_range(2000..=3500);
+                                let x_pos = rng.gen_range(-0.5..0.5);
+                                let y_pos = rng.gen_range(0.6..0.9);
+                                let escape_radius = rng.gen_range(0.01..0.2);
+                                let max_iterations = rng.gen_range(400..1200);
+                                let smoothness = rng.gen_range(1..20);
+                                let color_step = rng.gen_range(1000.0..10000.0);
+                                path = generate_mathematical_image(
+                                    width,
+                                    height,
+                                    "mandelbrot",
+                                    &format!("mandelbrot_default_{}.png", i),
+                                    Some((
+                                        x_pos,
+                                        y_pos,
+                                        escape_radius,
+                                        max_iterations,
+                                        smoothness,
+                                        color_step,
+                                    )),
+                                )?;
+                            }
+                            // Calculate the ratio of black (fractal) pixels to total pixels
+                            let img = image::open(&path)?.to_rgb8();
+                            let (width, height) = img.dimensions();
+                            let total_pixels = (width * height) as f64;
+                            let mut black_pixels = 0u64;
+                            for pixel in img.pixels() {
+                                if pixel.0 == [0, 0, 0] {
+                                    black_pixels += 1;
+                                }
+                            }
+                            fractal_ratio = black_pixels as f64 / total_pixels;
+                            attempts += 1;
+                        }
 
-    // // Mandelbrot Set with GoBrot example parameters (test 3, higher resolution)
-    // let path_mandelbrot_test3 = generate_mathematical_image(
-    //     1920,
-    //     1080,
-    //     "mandelbrot",
-    //     "mandelbrot_gobrot_test3.png",
-    //     Some((-0.00991275, 0.7899912, 0.02401245, 800, 10, 600.0)),
-    // )?;
-    // preview_image(&path_mandelbrot_test3)?;
+                        // Add random noise to the image file to defeat PNG compression
+                        {
+                            let mut file = OpenOptions::new().read(true).write(true).open(&path)?;
+                            let metadata = file.metadata()?;
+                            let file_size = metadata.len();
+                            let noise_bytes = rng.gen_range(1_000_000..=3_000_000);
+                            let mut noise = vec![0u8; noise_bytes];
+                            rng.fill(&mut noise[..]);
+                            file.seek(SeekFrom::End(0))?;
+                            file.write_all(&noise)?;
+                            // Helper to format bytes as human-readable string
+                            fn human_readable_size(bytes: u64) -> String {
+                                const KB: u64 = 1024;
+                                const MB: u64 = KB * 1024;
+                                const GB: u64 = MB * 1024;
+                                match bytes {
+                                    b if b >= GB => format!("{:.2} GB", b as f64 / GB as f64),
+                                    b if b >= MB => format!("{:.2} MB", b as f64 / MB as f64),
+                                    b if b >= KB => format!("{:.2} KB", b as f64 / KB as f64),
+                                    b => format!("{} bytes", b),
+                                }
+                            }
 
-    // Random Julia Set (already random C, black on white)
-    // let path_julia =
-    //     generate_mathematical_image(800, 600, "random_julia", "random_julia_fractal.png", None)?;
-    // preview_image(&path_julia)?;
+                            println!(
+                                "Appended {} bytes of noise to {} (original size: {}, new size: {}), fractal ratio: {:.4}",
+                                noise_bytes,
+                                path.display(),
+                                human_readable_size(file_size),
+                                human_readable_size(file_size + noise_bytes as u64),
+                                fractal_ratio
+                            );
+                        }
 
-    // // Barnsley Fern (fixed parameters, black on white)
-    // let path_fern =
-    //     generate_mathematical_image(800, 600, "barnsley_fern", "barnsley_fern_black.png", None)?;
-    // preview_image(&path_fern)?;
+                        preview_image(&path)?;
+                        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+                    })
+                })
+                .collect();
 
-    // // Burning Ship Fractal (black on white)
-    // let path_burning_ship = generate_mathematical_image(
-    //     800,
-    //     600,
-    //     "burning_ship",
-    //     "burning_ship_fractal_black.png",
-    //     None,
-    // )?;
-    // preview_image(&path_burning_ship)?;
-
-    println!(
-        "\nAll generated images are in your system's temporary directory. You might need to manually delete them."
-    );
-    // println!("  - {}", path_burning_ship.display());
-
-    upload().await?;
+            // Await all tasks and propagate errors
+            try_join_all(tasks).await?;
+        }
+        Commands::Upload => {
+            upload().await?;
+        }
+    }
 
     Ok(())
 }
 
-/// Uploads a local folder recursively to a DigitalOcean Space.
-///
-/// # Arguments
-/// * `local_folder_path` - The path to the local folder to upload.
-/// * `bucket_name` - The name of your DigitalOcean Space.
-/// * `do_region_name` - The DigitalOcean region (e.g., "nyc3", "lon1", "fra1").
-/// * `space_folder_prefix` - An optional prefix for objects within the Space
-///   (e.g., "my-uploads/"). If empty, files are uploaded to the root.
-///
-/// # Environment Variables
-/// This function expects `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
-/// to be set in your environment for authentication with DigitalOcean Spaces.
-///
-/// # Returns
-/// A `Result` indicating success or failure.
 pub async fn upload_folder_to_do_space(
     local_folder_path: &Path,
     bucket_name: &str,
@@ -386,11 +437,28 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut rdr = ReaderBuilder::new().has_headers(true).from_path(csv_path)?;
         for result in rdr.records() {
             let record = result?;
-            // Support both old (1 column) and new (2 column) CSVs
-            if record.len() == 2 {
-                existing_rows.push((record[0].to_string(), record[1].to_string()));
+            // Support both old (1 column), new (2 column), or extended (4 column) CSVs
+            if record.len() == 4 {
+                existing_rows.push((
+                    record[0].to_string(),
+                    record[1].to_string(),
+                    record[2].to_string(),
+                    record[3].to_string(),
+                ));
+            } else if record.len() == 2 {
+                existing_rows.push((
+                    record[0].to_string(),
+                    record[1].to_string(),
+                    String::new(),
+                    String::new(),
+                ));
             } else if record.len() == 1 {
-                existing_rows.push((record[0].to_string(), String::new()));
+                existing_rows.push((
+                    record[0].to_string(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ));
             }
         }
     }
@@ -411,8 +479,21 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             space_prefix.unwrap_or(""),
             file
         );
-        if !existing_rows.iter().any(|(f, _)| f == file) {
-            existing_rows.push((cdn_url, origin_url));
+        // File name
+        let file_name = Path::new(file)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(file);
+
+        // File size in KiB
+        let file_path = test_folder.join(file);
+        let file_size_kib = match fs::metadata(&file_path) {
+            Ok(meta) => format!("{:.2}", meta.len() as f64 / 1024.0),
+            Err(_) => String::from(""),
+        };
+
+        if !existing_rows.iter().any(|(f, _, _, _)| f == file) {
+            existing_rows.push((cdn_url, origin_url, file_name.to_string(), file_size_kib));
         }
     }
 
@@ -421,9 +502,9 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         fs::create_dir_all(parent)?;
     }
     let mut wtr = WriterBuilder::new().has_headers(true).from_path(csv_path)?;
-    wtr.write_record(&["cdn_url", "origin_url"])?;
-    for (cdn_url, origin_url) in existing_rows {
-        wtr.write_record(&[cdn_url, origin_url])?;
+    wtr.write_record(&["cdn_url", "origin_url", "file_name", "file_size_kib"])?;
+    for (cdn_url, origin_url, file_name, file_size_kib) in existing_rows {
+        wtr.write_record(&[cdn_url, origin_url, file_name, file_size_kib])?;
     }
     wtr.flush()?;
 

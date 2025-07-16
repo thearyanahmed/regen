@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["full"] } # For async runtime
 walkdir = "2"                                  # For directory traversal
 futures = "0.3"                                # For async utilities like try_join_all
 csv = "1.3.1"
+clap = { version = "4.5.41", features = ["derive"] }
 
 
 [[bin]]
