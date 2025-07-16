@@ -1,0 +1,16 @@
+cdn_url,origin_url,file_name,file_size_kib
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/rust-uploads/mandelbrot_default_4.png,https://benchmarkap.lon1.digitaloceanspaces.com/rust-uploads/mandelbrot_default_4.png,mandelbrot_default_4.png,2367.16
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/rust-uploads/mandelbrot_default_3.png,https://benchmarkap.lon1.digitaloceanspaces.com/rust-uploads/mandelbrot_default_3.png,mandelbrot_default_3.png,1798.39
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/rust-uploads/mandelbrot_default_2.png,https://benchmarkap.lon1.digitaloceanspaces.com/rust-uploads/mandelbrot_default_2.png,mandelbrot_default_2.png,3112.33
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/rust-uploads/mandelbrot_default_0.png,https://benchmarkap.lon1.digitaloceanspaces.com/rust-uploads/mandelbrot_default_0.png,mandelbrot_default_0.png,3228.51
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/rust-uploads/mandelbrot_default_1.png,https://benchmarkap.lon1.digitaloceanspaces.com/rust-uploads/mandelbrot_default_1.png,mandelbrot_default_1.png,2014.62
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_4.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_4.png,mandelbrot_default_4.png,2367.16
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_3.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_3.png,mandelbrot_default_3.png,1798.39
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_2.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_2.png,mandelbrot_default_2.png,3112.33
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_0.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_0.png,mandelbrot_default_0.png,3228.51
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_1.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_1.png,mandelbrot_default_1.png,2014.62
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_4.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_4.png,mandelbrot_default_4.png,2367.16
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_3.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_3.png,mandelbrot_default_3.png,1798.39
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_2.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_2.png,mandelbrot_default_2.png,3112.33
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_0.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_0.png,mandelbrot_default_0.png,3228.51
+https://benchmarkap.lon1.cdn.digitaloceanspaces.com/fractals/mandelbrot_default_1.png,https://benchmarkap.lon1.digitaloceanspaces.com/fractals/mandelbrot_default_1.png,mandelbrot_default_1.png,2014.62

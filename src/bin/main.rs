@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     width,
                                     height,
                                     "mandelbrot",
-                                    &format!("mandelbrot_default_{}.png", i),
+                                    &format!("mandelbrot_{}.png", i),
                                     Some((
                                         x_pos,
                                         y_pos,
@@ -395,7 +395,7 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // IMPORTANT: Replace with your actual DigitalOcean Space details
     let bucket = "benchmarkap"; // e.g., "my-app-space"
     let region = "lon1"; // e.g., "nyc3", "lon1", "fra1"
-    let space_prefix = Some("rust-uploads/"); // Optional: upload into a specific folder within the Space
+    let space_prefix = Some("fractals/"); // Optional: upload into a specific folder within the Space
 
     // Ensure your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are set.
     // For example, in your shell:
