@@ -1,8 +1,10 @@
 use clap::Parser as ClapParser;
 use csv::ReaderBuilder;
 use csv::WriterBuilder;
+use env_logger;
 use futures::future::try_join_all;
 use image::{ImageBuffer, Rgb, RgbImage};
+use log::{error, info, warn}; // Import logging macros
 use rand::Rng;
 use rusoto_core::Region;
 use rusoto_s3::{PutObjectRequest, S3, S3Client};
@@ -12,7 +14,7 @@ use std::io::Write;
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
+use walkdir::WalkDir; // Import env_logger for initialization
 
 // For concurrent uploads
 #[allow(clippy::too_many_arguments)] // This function signature is intentionally long for demonstration
@@ -23,6 +25,10 @@ pub fn generate_mathematical_image(
     filename: &str,
     mandelbrot_params: Option<(f64, f64, f64, u32, u32, f64)>,
 ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    info!(
+        "Generating mathematical image: pattern_type={}, filename={}, width={}, height={}",
+        pattern_type, filename, width, height
+    );
     let mut img: RgbImage = ImageBuffer::new(width, height);
     let mut rng = rand::thread_rng();
 
@@ -35,13 +41,15 @@ pub fn generate_mathematical_image(
 
     match pattern_type {
         "mandelbrot" => {
+            info!(
+                "Generating Mandelbrot pattern with params: {:?}",
+                mandelbrot_params
+            );
             // Default Mandelbrot parameters, can be overridden by `mandelbrot_params`
             let (x_pos, y_pos, escape_radius, max_iterations, smoothness, color_step) =
                 mandelbrot_params.unwrap_or((-0.00275, 0.78912, 0.125689, 800, 8, 6000.0));
 
             // Calculate the view window based on x_pos, y_pos, and escape_radius
-            // The escape_radius in GoBrot seems to relate to the zoom level.
-            // We'll map it to a view width/height. A smaller radius means more zoom.
             let view_width = 4.0 * escape_radius;
             let view_height = view_width * (height as f64 / width as f64);
 
@@ -74,38 +82,29 @@ pub fn generate_mathematical_image(
                         img.put_pixel(x, y, Rgb([0, 0, 0]));
                     } else {
                         // Point escaped, color based on iteration count with smoothing
-                        // GoBrot's smoothing and step suggest a continuous coloring
-                        // We'll use a logarithmic smoothing for better visual results
                         let log_zn = magnitude_sq.ln() / 2.0;
                         let nu = (log_zn / 2.0_f64.ln()).ln() / 2.0_f64.ln();
                         let smoothed_iterations = iterations as f64 + 1.0 - nu;
 
-                        // Map smoothed_iterations to a color intensity (black to white gradient for background)
-                        // The 'step' parameter in GoBrot affects how rapidly colors change.
-                        // Here, we'll use it to scale the intensity for the white background.
                         let color_val = (smoothed_iterations / color_step) * 255.0;
                         let _intensity = (color_val.min(255.0)) as u8;
 
-                        // Since you requested white background and black foreground,
-                        // we'll make the escaped points white, with a subtle gradient if smoothness is applied.
-                        // For simplicity, if `smoothness` is 0 (or very low), it's just white.
-                        // If `smoothness` is high, it will still be white, but the calculation is there
-                        // for future palette integration.
-                        // For now, if it escapes, it's white.
                         if smoothness == 0 {
                             img.put_pixel(x, y, Rgb([255, 255, 255]));
                         } else {
-                            // A subtle gradient in white if smoothness is applied
-                            // This might not be visible with pure black/white, but sets up for palettes.
-                            // For now, let's just make it white for escaped points.
                             img.put_pixel(x, y, Rgb([255, 255, 255]));
                         }
                     }
                 }
             }
+            info!("Finished Mandelbrot pattern generation for {}", filename);
         }
         _ => {
             // Default to random noise if pattern_type is not recognized
+            warn!(
+                "Unrecognized pattern type: {}. Defaulting to random noise.",
+                pattern_type
+            );
             for x in 0..width {
                 for y in 0..height {
                     let r_val = rng.r#gen();
@@ -114,6 +113,7 @@ pub fn generate_mathematical_image(
                     img.put_pixel(x, y, Rgb([r_val, g_val, b_val]));
                 }
             }
+            info!("Random noise image generated for {}", filename);
         }
     }
     let temp_dir = PathBuf::from("src/data/images");
@@ -121,6 +121,7 @@ pub fn generate_mathematical_image(
     let temp_path = temp_dir.join(filename);
 
     img.save(&temp_path)?;
+    info!("Image saved to {}", temp_path.display());
 
     Ok(temp_path)
 }
@@ -129,6 +130,7 @@ pub fn generate_mathematical_image(
 /// This function is OS-dependent.
 pub fn preview_image(image_path: &PathBuf) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let path_str = image_path.to_str().ok_or("Invalid path for preview")?;
+    info!("Attempting to preview image: {}", image_path.display());
 
     #[cfg(target_os = "macos")]
     {
@@ -139,7 +141,7 @@ pub fn preview_image(image_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
         Command::new("xdg-open").arg(path_str).spawn()?;
     }
 
-    println!("Previewing image at: {}", image_path.display());
+    info!("Previewing image at: {}", image_path.display());
     Ok(())
 }
 
@@ -170,12 +172,16 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    env_logger::init(); // Initialize the logger
+    info!("Logger initialized.");
+
     match Cli::parse().command {
         Commands::Generate { count, preview } => {
-            // Arc for thread-safe RNG seeding (each task gets its own RNG)
+            info!("Generating {} Mandelbrot images...", count);
             let tasks: Vec<_> = (0..count)
                 .map(|i| {
                     tokio::spawn(async move {
+                        info!("Starting generation for image {}", i);
                         let mut rng = rand::thread_rng();
                         let width = rng.gen_range(3000..=5000);
                         let height = rng.gen_range(2000..=3500);
@@ -185,6 +191,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let max_iterations = rng.gen_range(400..1200);
                         let smoothness = rng.gen_range(1..20);
                         let color_step = rng.gen_range(1000.0..10000.0);
+
+                        info!("Params for image {}: width={}, height={}, x_pos={}, y_pos={}, escape_radius={}, max_iterations={}, smoothness={}, color_step={}", i, width, height, x_pos, y_pos, escape_radius, max_iterations, smoothness, color_step);
 
                         let path = generate_mathematical_image(
                             width,
@@ -207,6 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut attempts = 0;
                         while fractal_ratio < 0.4 || fractal_ratio > 0.6 {
                             if attempts > 0 {
+                                info!("Fractal ratio out of range ({:.4}). Regenerating image {}...", fractal_ratio, i);
                                 // Regenerate with new random parameters
                                 let width = rng.gen_range(3000..=5000);
                                 let height = rng.gen_range(2000..=3500);
@@ -216,6 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let max_iterations = rng.gen_range(400..1200);
                                 let smoothness = rng.gen_range(1..20);
                                 let color_step = rng.gen_range(1000.0..10000.0);
+                                info!("Regeneration params for image {}: width={}, height={}, x_pos={}, y_pos={}, escape_radius={}, max_iterations={}, smoothness={}, color_step={}", i, width, height, x_pos, y_pos, escape_radius, max_iterations, smoothness, color_step);
                                 path = generate_mathematical_image(
                                     width,
                                     height,
@@ -242,6 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 }
                             }
                             fractal_ratio = black_pixels as f64 / total_pixels;
+                            info!("Image {}: attempt {}, fractal_ratio={:.4}", i, attempts, fractal_ratio);
                             attempts += 1;
                         }
 
@@ -268,7 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 }
                             }
 
-                            println!(
+                            info!(
                                 "Appended {} bytes of noise to {} (original size: {}, new size: {}), fractal ratio: {:.4}",
                                 noise_bytes,
                                 path.display(),
@@ -279,21 +290,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
 
                         if preview {
+                            info!("Preview flag set, previewing image {}", i);
                             preview_image(&path)?;
                         }
+                        info!("Finished generation for image {}", i);
                         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                     })
                 })
                 .collect();
 
             // Await all tasks and propagate errors
+            info!("Awaiting all image generation tasks...");
             try_join_all(tasks).await?;
+            info!("All image generation tasks completed.");
         }
         Commands::Upload => {
+            info!("Starting upload process...");
             upload().await?;
+            info!("Upload process finished.");
         }
     }
 
+    info!("Program finished.");
     Ok(())
 }
 
@@ -303,7 +321,6 @@ pub async fn upload_folder_to_do_space(
     do_region_name: &str,
     space_folder_prefix: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // <-- FIX 1: Add Send + Sync
     // 1. Initialize S3 Client with DigitalOcean Endpoint
     let endpoint = format!("https://{}.digitaloceanspaces.com", do_region_name);
     let region = Region::Custom {
@@ -312,8 +329,8 @@ pub async fn upload_folder_to_do_space(
     };
     let s3_client = S3Client::new(region);
 
-    println!("Starting upload of folder: {}", local_folder_path.display());
-    println!("To Space: {} in region: {}", bucket_name, do_region_name);
+    info!("Starting upload of folder: {}", local_folder_path.display());
+    info!("To Space: {} in region: {}", bucket_name, do_region_name);
 
     let mut upload_tasks = Vec::new();
 
@@ -335,7 +352,7 @@ pub async fn upload_folder_to_do_space(
 
             let s3_key = s3_key_path.to_string_lossy().replace("\\", "/"); // Ensure forward slashes
 
-            println!("- Preparing to upload: {} -> {}", path.display(), s3_key);
+            info!("- Preparing to upload: {} -> {}", path.display(), s3_key);
 
             let file_data = fs::read(&path)?;
             let client_clone = s3_client.clone();
@@ -344,13 +361,16 @@ pub async fn upload_folder_to_do_space(
 
             // Create an async task for each file upload
             let task = tokio::spawn(async move {
+                info!(
+                    "Uploading file {} to S3 key {}",
+                    path_clone.display(),
+                    s3_key
+                );
                 let mut put_request = PutObjectRequest {
                     bucket: bucket_name_clone,
                     key: s3_key.clone(),
                     body: Some(file_data.into()),
                     acl: Some("public-read".to_string()), // Make the object public
-                    // Optional: Set Content-Type based on file extension
-                    // content_type: Some(mime_guess::from_path(path).first_or_text_plain().to_string()),
                     ..Default::default()
                 };
 
@@ -360,7 +380,6 @@ pub async fn upload_folder_to_do_space(
                         "jpg" | "jpeg" => "image/jpeg",
                         "gif" => "image/gif",
                         "webp" => "image/webp",
-                        // Add more image types as needed
                         _ => "application/octet-stream", // Default to download if unknown
                     };
                     put_request.content_type = Some(mime_type.to_string());
@@ -368,12 +387,11 @@ pub async fn upload_folder_to_do_space(
 
                 match client_clone.put_object(put_request).await {
                     Ok(_) => {
-                        println!("  - Successfully uploaded: {}", s3_key);
+                        info!("  - Successfully uploaded: {}", s3_key);
                         Ok(())
                     }
                     Err(e) => {
-                        eprintln!("  - Failed to upload {}: {:?}", s3_key, e);
-                        // FIX 2: Add + Send + Sync to the dyn Error trait object within the spawned task
+                        error!("  - Failed to upload {}: {:?}", s3_key, e);
                         Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
                     }
                 }
@@ -383,9 +401,10 @@ pub async fn upload_folder_to_do_space(
     }
 
     // 3. Wait for all upload tasks to complete
+    info!("Waiting for all upload tasks to complete...");
     try_join_all(upload_tasks).await?;
 
-    println!("Folder upload complete!");
+    info!("Folder upload complete!");
     Ok(())
 }
 
@@ -393,7 +412,7 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Upload all files from the src/data/images folder
     let test_folder = PathBuf::from("src/data/images");
     if !test_folder.exists() {
-        println!("No images to upload: src/data/images folder does not exist.");
+        warn!("No images to upload: src/data/images folder does not exist.");
         return Ok(());
     }
 
@@ -402,14 +421,18 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let region = "lon1"; // e.g., "nyc3", "lon1", "fra1"
     let space_prefix = Some("fractals/"); // Optional: upload into a specific folder within the Space
 
-    // Ensure your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are set.
-    // For example, in your shell:
-    // export AWS_ACCESS_KEY_ID="your_access_key"
-    // export AWS_SECRET_ACCESS_KEY="your_secret_key"
+    info!(
+        "Uploading folder {} to DigitalOcean Space {}/{} with prefix {:?}",
+        test_folder.display(),
+        bucket,
+        region,
+        space_prefix
+    );
 
+    // Ensure your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are set.
     match upload_folder_to_do_space(&test_folder, bucket, region, space_prefix).await {
-        Ok(_) => println!("\nFolder upload to DigitalOcean Spaces succeeded!"),
-        Err(e) => eprintln!("\nFolder upload failed: {}", e),
+        Ok(_) => info!("\nFolder upload to DigitalOcean Spaces succeeded!"),
+        Err(e) => error!("\nFolder upload failed: {}", e),
     }
     // After upload, append URLs to a CSV file
 
@@ -433,16 +456,17 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             space_prefix.unwrap_or(""),
             file_name
         );
+        info!("Generated CDN URL for file {}: {}", file_name, url);
         urls.push((file_name, url));
     }
 
     // Read existing CSV (if any)
     let mut existing_rows = Vec::new();
     if std::path::Path::new(csv_path).exists() {
+        info!("Reading existing CSV file: {}", csv_path.display());
         let mut rdr = ReaderBuilder::new().has_headers(true).from_path(csv_path)?;
         for result in rdr.records() {
             let record = result?;
-            // Support both old (1 column), new (2 column), or extended (4 column) CSVs
             if record.len() == 4 {
                 existing_rows.push((
                     record[0].to_string(),
@@ -466,6 +490,7 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ));
             }
         }
+        info!("Loaded {} existing rows from CSV.", existing_rows.len());
     }
 
     // Append new URLs, avoiding duplicates
@@ -494,11 +519,20 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let file_path = test_folder.join(file);
         let file_size_kib = match fs::metadata(&file_path) {
             Ok(meta) => format!("{:.2}", meta.len() as f64 / 1024.0),
-            Err(_) => String::from(""),
+            Err(_) => {
+                warn!("Could not get metadata for file: {}", file_path.display());
+                String::from("")
+            }
         };
 
         if !existing_rows.iter().any(|(f, _, _, _)| f == file) {
+            info!(
+                "Appending new row to CSV: cdn_url={}, origin_url={}, file_name={}, file_size_kib={}",
+                cdn_url, origin_url, file_name, file_size_kib
+            );
             existing_rows.push((cdn_url, origin_url, file_name.to_string(), file_size_kib));
+        } else {
+            info!("Skipping duplicate file in CSV: {}", file);
         }
     }
 
@@ -506,12 +540,18 @@ async fn upload() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(parent) = csv_path.parent() {
         fs::create_dir_all(parent)?;
     }
+    info!(
+        "Writing {} rows to CSV file: {}",
+        existing_rows.len(),
+        csv_path.display()
+    );
     let mut wtr = WriterBuilder::new().has_headers(true).from_path(csv_path)?;
     wtr.write_record(&["cdn_url", "origin_url", "file_name", "file_size_kib"])?;
     for (cdn_url, origin_url, file_name, file_size_kib) in existing_rows {
         wtr.write_record(&[cdn_url, origin_url, file_name, file_size_kib])?;
     }
     wtr.flush()?;
+    info!("CSV file write complete.");
 
     Ok(())
 }
