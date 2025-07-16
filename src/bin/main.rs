@@ -160,6 +160,9 @@ enum Commands {
         /// Number of images to generate
         #[clap(short, long)]
         count: usize,
+
+        #[clap(short, long, default_value_t = false)]
+        preview: bool,
     },
     /// Upload images to DigitalOcean Spaces
     Upload,
@@ -168,7 +171,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match Cli::parse().command {
-        Commands::Generate { count } => {
+        Commands::Generate { count, preview } => {
             // Arc for thread-safe RNG seeding (each task gets its own RNG)
             let tasks: Vec<_> = (0..count)
                 .map(|i| {
@@ -275,7 +278,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             );
                         }
 
-                        preview_image(&path)?;
+                        if preview {
+                            preview_image(&path)?;
+                        }
                         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                     })
                 })
