@@ -213,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut fractal_ratio = 0.0;
                         let mut path = path;
                         let mut attempts = 0;
-                        while fractal_ratio < 0.4 || fractal_ratio > 0.6 {
+                        while fractal_ratio < 0.3 || fractal_ratio > 0.7 {
                             if attempts > 0 {
                                 info!("Fractal ratio out of range ({:.4}). Regenerating image {}...", fractal_ratio, i);
                                 // Regenerate with new random parameters
